@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Secrets / environment
+.env
+*.env
+!.env.example
+
+# Local SQLite database (seeded automatically at runtime)
+omnicare/omnicare.db
+*.db
+
+# Streamlit
+.streamlit/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
