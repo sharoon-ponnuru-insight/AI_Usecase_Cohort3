@@ -1,0 +1,7 @@
+# OmniCare dependencies
+# Auth: set GOOGLE_GENAI_USE_VERTEXAI=1, GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION
+# and run `gcloud auth application-default login` before using the ADK agents.
+google-adk
+streamlit
+python-dotenv
+pytest
