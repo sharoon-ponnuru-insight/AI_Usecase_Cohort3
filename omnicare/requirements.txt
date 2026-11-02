@@ -5,3 +5,4 @@ google-adk
 streamlit
 python-dotenv
 pytest
+pytest-cov

@@ -1,0 +1,14 @@
+[run]
+source = .
+omit =
+    app.py
+    dev_harness.py
+    tests/*
+    __init__.py
+
+[report]
+show_missing = True
+fail_under = 80
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

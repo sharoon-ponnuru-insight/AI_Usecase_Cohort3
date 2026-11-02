@@ -111,15 +111,17 @@ def update_address(order_id: str, new_address: str) -> dict[str, Any] | None:
         conn.close()
 
 
-def mark_refunded(order_id: str, amount: float, reason: str) -> dict[str, Any] | None:
+def mark_refunded(
+    order_id: str, amount: float, reason: str, status: str = "REFUNDED"
+) -> dict[str, Any] | None:
     conn = _get_connection()
     try:
         row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
         if row is None:
             return None
         conn.execute(
-            "UPDATE orders SET status = 'REFUNDED', refunded_amount = ?, refund_reason = ? WHERE order_id = ?",
-            (amount, reason, order_id),
+            "UPDATE orders SET status = ?, refunded_amount = ?, refund_reason = ? WHERE order_id = ?",
+            (status, amount, reason, order_id),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
@@ -129,16 +131,19 @@ def mark_refunded(order_id: str, amount: float, reason: str) -> dict[str, Any] |
 
 
 def add_points(customer_id: str, points: int) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
+    conn = _get_connection()
+    try:
+        conn.execute(
             "UPDATE customers SET loyalty_points = loyalty_points + ? WHERE customer_id = ?",
             (points, customer_id),
         )
         conn.commit()
-        cursor.execute("SELECT loyalty_points FROM customers WHERE customer_id = ?", (customer_id,))
-        row = cursor.fetchone()
-        return row[0] if row else 0
+        row = conn.execute(
+            "SELECT loyalty_points FROM customers WHERE customer_id = ?", (customer_id,)
+        ).fetchone()
+        return row["loyalty_points"] if row else 0
+    finally:
+        conn.close()
 
 
 def get_customer_points(customer_id: str) -> int:

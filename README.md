@@ -86,7 +86,20 @@ python omnicare/dev_harness.py
 streamlit run omnicare/app.py
 ```
 
-> Unit tests (`omnicare/tests/`) are planned but not yet implemented.
+### Tests
+
+```bash
+cd omnicare
+pytest --cov=. --cov-report=term-missing
+```
+
+The suite (`omnicare/tests/`) covers `db.py`, `tools.py`, `callbacks.py`, and
+`agents.py` (construction + pure-Python helpers) with no real LLM calls, using
+an isolated, auto-seeded temp SQLite database per test. `app.py` and
+`dev_harness.py` are excluded from coverage: `app.py` is a Streamlit script
+that executes UI/auth code at import time and isn't practically unit-testable
+outside a Streamlit runtime, and `dev_harness.py` is itself a manual dev tool.
+Coverage is currently ~99%, well above the 80% target (see `.coveragerc`).
 
 The Streamlit UI (`omnicare/app.py`) provides:
 - A sidebar to pick a sample customer (`CUST-101` / `CUST-102`) and toggle
@@ -105,4 +118,5 @@ omnicare/
   agents.py         # graph workflow: router + 2 specialist agents
   app.py            # Streamlit UI
   dev_harness.py    # no-LLM tool smoke test
+  tests/            # pytest unit tests (db, tools, callbacks, agents)
 ```

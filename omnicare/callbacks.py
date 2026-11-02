@@ -92,7 +92,7 @@ def refund_limit_callback(
         if order_id:
             order = db.get_order(order_id)
             if order:
-                refund_amount = float(order.get("total_amount", 0.0))
+                refund_amount = float(order.get("amount", 0.0))
             else:
                 refund_amount = 0.0
         else:

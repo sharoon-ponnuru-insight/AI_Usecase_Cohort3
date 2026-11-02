@@ -81,9 +81,7 @@ def issue_order_refund(
 
     # 1. PROCESSING -> Cancellation & Full Refund
     if current_status == "PROCESSING":
-        if hasattr(db, "update_order_status"):
-            db.update_order_status(order_id, "CANCELLED")
-        updated = db.mark_refunded(order_id, refund_amount, clean_reason)
+        updated = db.mark_refunded(order_id, refund_amount, clean_reason, status="CANCELLED")
 
         tool_context.state["last_order_id"] = order_id
         tool_context.state["last_refund_amount"] = refund_amount
@@ -101,9 +99,7 @@ def issue_order_refund(
 
     # 2. DELIVERED -> Item Return & Full Refund (+ 50% Loyalty Points if Damaged)
     if current_status == "DELIVERED":
-        if hasattr(db, "update_order_status"):
-            db.update_order_status(order_id, "RETURNED")
-        updated = db.mark_refunded(order_id, refund_amount, clean_reason)
+        updated = db.mark_refunded(order_id, refund_amount, clean_reason, status="RETURNED")
 
         tool_context.state["last_order_id"] = order_id
         tool_context.state["last_refund_amount"] = refund_amount
