@@ -37,6 +37,7 @@ _SEED_ORDERS = [
     ("ORD-102", "CUST-101", "SHIPPED", "TRK-55821", "12 Elm St, Springfield", 89.50, 0),
     ("ORD-103", "CUST-101", "DELAYED", "TRK-55900", "12 Elm St, Springfield", 120.00, 1),
     ("ORD-104", "CUST-101", "DELIVERED", "TRK-55111", "12 Elm St, Springfield", 15.25, 0),
+    ("ORD-105", "CUST-101", "delayed", "TRK-55112", "12 Elm St, Springfield", 89.25, 0),
     ("ORD-201", "CUST-102", "PROCESSING", None, "88 Oak Ave, Shelbyville", 220.00, 0),
     ("ORD-202", "CUST-102", "DELIVERED", "TRK-61234", "88 Oak Ave, Shelbyville", 34.75, 0),
     ("ORD-203", "CUST-102", "DELAYED", "TRK-61299", "88 Oak Ave, Shelbyville", 150.00, 1),
@@ -56,12 +57,11 @@ def _get_connection() -> sqlite3.Connection:
 
 
 def _seed_if_empty(conn: sqlite3.Connection) -> None:
-    count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-    if count > 0:
-        return
+    # Uses INSERT OR IGNORE so existing order_ids are preserved,
+    # and any newly added orders in _SEED_ORDERS get inserted automatically.
     conn.executemany(
         """
-        INSERT INTO orders
+        INSERT OR IGNORE INTO orders
             (order_id, customer_id, status, tracking_number, address, amount, delayed_or_damaged)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
@@ -129,21 +129,16 @@ def mark_refunded(order_id: str, amount: float, reason: str) -> dict[str, Any] |
 
 
 def add_points(customer_id: str, points: int) -> int:
-    """Adds points to the customer's balance and returns the new total."""
-    conn = _get_connection()
-    try:
-        conn.execute(
-            "INSERT INTO customers (customer_id, loyalty_points) VALUES (?, ?) "
-            "ON CONFLICT(customer_id) DO UPDATE SET loyalty_points = loyalty_points + excluded.loyalty_points",
-            (customer_id, points),
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE customers SET loyalty_points = loyalty_points + ? WHERE customer_id = ?",
+            (points, customer_id),
         )
         conn.commit()
-        row = conn.execute(
-            "SELECT loyalty_points FROM customers WHERE customer_id = ?", (customer_id,)
-        ).fetchone()
-        return row["loyalty_points"] if row else points
-    finally:
-        conn.close()
+        cursor.execute("SELECT loyalty_points FROM customers WHERE customer_id = ?", (customer_id,))
+        row = cursor.fetchone()
+        return row[0] if row else 0
 
 
 def get_customer_points(customer_id: str) -> int:

@@ -25,10 +25,9 @@ _CARD_PATTERN = re.compile(r"\b\d{16}\b")
 
 REFUND_LIMIT = 100.0
 
-# Graph-workflow nodes each run in an isolated session branch, so agents don't
-# automatically see prior turns. We track a short rolling transcript in
-# session.state and inject it into each agent's instruction (see agents.py).
-MAX_HISTORY_TURNS = 4
+# Each turn produces 1 user entry + 1 router entry + 1 specialist entry (~3 items).
+# Setting this to 15-20 preserves context across 4 to 6 full dialogue turns.
+MAX_HISTORY_TURNS = 20
 
 
 def _append_history(tool_context, author: str, text: str) -> None:
@@ -86,13 +85,29 @@ def refund_limit_callback(
     if tool.name != "issue_order_refund":
         return None
 
-    refund_amount = args.get("refund_amount", 0) or 0
-    if refund_amount > REFUND_LIMIT and not tool_context.state.get("manager_approval", False):
+    # 1. Determine the refund amount: look in args first, then look up order total from the database
+    refund_amount = args.get("refund_amount")
+    if refund_amount is None:
+        order_id = args.get("order_id")
+        if order_id:
+            order = db.get_order(order_id)
+            if order:
+                refund_amount = float(order.get("total_amount", 0.0))
+            else:
+                refund_amount = 0.0
+        else:
+            refund_amount = 0.0
+
+    refund_amount = float(refund_amount)
+
+    # 2. Block if above threshold and not manager-approved
+    manager_approved = tool_context.state.get("manager_approval", False)
+    if refund_amount > REFUND_LIMIT and not manager_approved:
         return {
             "status": "BLOCKED",
             "message": (
-                "Refunds over $100 require Manager Approval. Please enable the "
-                "Manager Approval checkbox in the UI."
+                f"Refund amount is ${refund_amount:.2f}, which exceeds ${REFUND_LIMIT:.2f}. "
+                "Manager Approval is required. Please enable the Manager Approval checkbox in the UI."
             ),
         }
     return None

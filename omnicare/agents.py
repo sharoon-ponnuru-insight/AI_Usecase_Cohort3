@@ -43,13 +43,10 @@ def _with_history(static_instruction: str):
 
     return _instruction
 
+
 order_tracking_agent = Agent(
     name="order_tracking_agent",
     model=MODEL_NAME,
-    # mode="task" is disabled/unsupported for agents used as graph-workflow
-    # nodes in ADK Python v2.0.0 (it leaves the node WAITING forever, pinning
-    # every subsequent user turn onto this node). single_turn completes and
-    # returns control to the graph after each turn, which is what we want.
     mode="single_turn",
     rerun_on_resume=True,
     description="Checks order status/tracking and updates delivery addresses for unshipped orders.",
@@ -72,17 +69,21 @@ returns_and_loyalty_agent = Agent(
     rerun_on_resume=True,
     description="Handles returns, processes refunds, and issues apology loyalty points.",
     instruction=_with_history(
-        "You are the returns and loyalty specialist for OmniCare. The current customer_id is "
-        "{customer_id}. Use issue_order_refund to process refunds and add_loyalty_points to "
-        "issue apology points when an order was delayed or damaged. Refunds over $100 require "
-        "Manager Approval; if a tool call is BLOCKED, tell the user to enable the Manager "
-        "Approval checkbox in the UI."
+        "You are the returns and loyalty specialist for OmniCare. The current customer_id is {customer_id}.\n\n"
+        "Rules & Workflow:\n"
+        "1. Active Order Context: Identify the target order from recent conversation history or the active order ID.\n"
+        "2. Cancellations & Returns (use `issue_order_refund`):\n"
+        "   - Always ask for/confirm the mandatory reason from the customer.\n"
+        "   - Damaged item policy: When a DELIVERED item is damaged, calling `issue_order_refund` marks it as RETURNED, "
+        "processes a full refund, AND automatically credits 50% of the item cost as apology loyalty points. "
+        "Explain all three outcomes clearly to the user.\n"
+        "   - Note: If an order is still SHIPPED (not DELIVERED), explain that they cannot have received a damaged item yet, "
+        "and returns/refunds cannot be initiated until delivery.\n"
+        "   - Manager Approval: Refunds over $100 require Manager Approval. If blocked, prompt the user to check the box in the UI.\n\n"
+        "3. Delay Apology Points (use `add_loyalty_points`):\n"
+        "   - Use ONLY for orders confirmed with status DELAYED to award 10% in points."
     ),
     tools=[issue_order_refund, add_loyalty_points],
-    # customer_id_guard_callback runs first and short-circuits the chain
-    # (before_tool_callback list execution stops at the first non-None
-    # result), so an order owned by another customer is blocked before the
-    # refund-limit check ever runs.
     before_tool_callback=[customer_id_guard_callback, refund_limit_callback],
     after_model_callback=record_agent_response_callback,
     after_tool_callback=activity_logger_callback,
@@ -95,11 +96,15 @@ concierge_router_agent = Agent(
     rerun_on_resume=True,
     description="Greets the customer and classifies their request for routing.",
     instruction=_with_history(
-        "You are OmniCare's concierge. Greet the user by their customer_id, {customer_id}. "
-        "Classify the user's latest message as exactly one word: "
+        "You are OmniCare's concierge. "
+        "Review the conversation history:\n"
+        "- If this is the start of the conversation (no prior assistant greeting exists), "
+        "greet the user by their customer_id, {customer_id}, followed by the classification word.\n"
+        "- If you have already greeted the user earlier in the conversation, DO NOT greet them again; "
+        "respond ONLY with the single classification word.\n\n"
+        "Classification rules: Classify the user's latest message as exactly one word:\n"
         "ORDER_TRACKING (for order status, tracking, or address-change requests) or "
-        "RETURNS_LOYALTY (for return, refund, or loyalty point requests). "
-        "Respond with a short greeting followed by that single classification word."
+        "RETURNS_LOYALTY (for return, refund, or loyalty point requests)."
     ),
     before_model_callback=block_test_terms_callback,
     after_model_callback=record_agent_response_callback,
@@ -115,9 +120,6 @@ def route_to_specialist(node_input: str) -> Event:
     return Event(route="ORDER_TRACKING")
 
 
-# Graph workflow: concierge_router_agent greets + classifies -> route_to_specialist
-# dispatches to order_tracking_agent or returns_and_loyalty_agent, which in turn
-# call their respective tools.
 root_agent = Workflow(
     name="concierge_router_agent",
     edges=[
@@ -131,4 +133,3 @@ root_agent = Workflow(
         ),
     ],
 )
-

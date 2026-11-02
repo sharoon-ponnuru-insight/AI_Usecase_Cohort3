@@ -1,4 +1,4 @@
-"""Streamlit UI for OmniCare (used instead of `adk web`)."""
+"""Streamlit UI for OmniCare with Customer Authentication."""
 
 from __future__ import annotations
 
@@ -6,9 +6,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-# `streamlit run` adds this file's directory (omnicare/) to sys.path, not its
-# parent, so the `omnicare` package wouldn't otherwise be importable. Add the
-# parent directory explicitly so `from omnicare...` imports resolve.
+# Add parent directory explicitly so `from omnicare...` imports resolve
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
@@ -21,9 +19,54 @@ from omnicare.agents import root_agent
 
 APP_NAME = "omnicare"
 USER_ID = "local_user"
-CUSTOMERS = ["CUST-101", "CUST-102"]
+
+# Mock credentials store (Mapping Customer ID to Password and Profile Name)
+CUSTOMER_USERS = {
+    "CUST-101": {"password": "password101", "name": "Alice Johnson"},
+    "CUST-102": {"password": "password102", "name": "Bob Smith"},
+}
 
 st.set_page_config(page_title="OmniCare", page_icon="🛎️", layout="wide")
+
+
+# --- Authentication Handler ---
+def check_authentication() -> bool:
+    """Renders a login form if the user is not authenticated."""
+    if st.session_state.get("authenticated", False):
+        return True
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("## 🛎️ OmniCare Customer Portal Login")
+        with st.form("login_form"):
+            selected_user = st.selectbox("Select Customer ID", list(CUSTOMER_USERS.keys()))
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign In")
+
+            if submitted:
+                expected_pw = CUSTOMER_USERS[selected_user]["password"]
+                if password == expected_pw:
+                    st.session_state.authenticated = True
+                    st.session_state.customer_id = selected_user
+                    st.session_state.customer_name = CUSTOMER_USERS[selected_user]["name"]
+                    st.session_state.messages = []
+                    st.success("Authentication successful!")
+                    st.rerun()
+                else:
+                    st.error("Invalid customer ID or password.")
+        
+        st.caption("Demo credentials: `CUST-101` / `password101` or `CUST-102` / `password102`")
+
+    return False
+
+
+# Stop execution here if user is not authenticated
+if not check_authentication():
+    st.stop()
+
+
+# --- Main Application (runs only after successful authentication) ---
+customer_id = st.session_state.customer_id
 
 
 def _init_runner() -> tuple[Runner, InMemorySessionService]:
@@ -38,12 +81,12 @@ def _init_runner() -> tuple[Runner, InMemorySessionService]:
     return st.session_state.runner, st.session_state.session_service
 
 
-def _session_id_for(customer_id: str) -> str:
-    return f"session-{customer_id}"
+def _session_id_for(cust_id: str) -> str:
+    return f"session-{cust_id}"
 
 
-def _ensure_session(session_service: InMemorySessionService, customer_id: str):
-    session_id = _session_id_for(customer_id)
+def _ensure_session(session_service: InMemorySessionService, cust_id: str):
+    session_id = _session_id_for(cust_id)
     session = asyncio.run(
         session_service.get_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
     )
@@ -54,7 +97,7 @@ def _ensure_session(session_service: InMemorySessionService, customer_id: str):
                 user_id=USER_ID,
                 session_id=session_id,
                 state={
-                    "customer_id": customer_id,
+                    "customer_id": cust_id,
                     "manager_approval": False,
                     "last_order_id": None,
                     "activity_log": [],
@@ -65,8 +108,6 @@ def _ensure_session(session_service: InMemorySessionService, customer_id: str):
 
 
 def _run_turn(runner: Runner, session_id: str, user_text: str, manager_approval: bool) -> list[dict]:
-    """Runs one turn and returns a list of {author, text} response chunks."""
-
     async def _collect() -> list[dict]:
         responses: list[dict] = []
         async for event in runner.run_async(
@@ -85,16 +126,19 @@ def _run_turn(runner: Runner, session_id: str, user_text: str, manager_approval:
 
 
 # --- Sidebar ---
-st.sidebar.title("OmniCare Controls")
-customer_id = st.sidebar.selectbox("Sample customer", CUSTOMERS)
+st.sidebar.title("OmniCare Portal")
+st.sidebar.markdown(f"**Logged in as:** `{customer_id}` ({st.session_state.customer_name})")
+
+if st.sidebar.button("Sign Out"):
+    st.session_state.authenticated = False
+    st.session_state.customer_id = None
+    st.session_state.messages = []
+    st.rerun()
+
+st.sidebar.divider()
 manager_approval = st.sidebar.checkbox("Manager Approval Override", value=False)
 
 runner, session_service = _init_runner()
-
-if st.session_state.get("active_customer_id") != customer_id:
-    st.session_state.active_customer_id = customer_id
-    st.session_state.messages = []
-
 session = _ensure_session(session_service, customer_id)
 session_id = _session_id_for(customer_id)
 
@@ -138,5 +182,4 @@ if user_text := st.chat_input("Ask about an order, a return, or a refund..."):
                 {"role": "assistant", "text": resp["text"], "agent": resp["author"]}
             )
 
-    # Refresh the sidebar state/activity-log view after this turn.
     st.rerun()
